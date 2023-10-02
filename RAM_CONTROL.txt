@@ -1,0 +1,247 @@
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+use IEEE.NUMERIC_STD.ALL;
+entity ram_control1 is
+port (
+     clk         : in  std_logic;
+    reset       : in  std_logic;
+     pixel_ack   : in std_logic;
+     pixel_ack1   : in std_logic;
+    pixel_ack_out   : out std_logic;
+    pixel_ack_out1   : out std_logic; 
+    read_start  : out std_logic; 
+    edge_pixelin  : in unsigned (7 downto 0);
+    pixel_out   : out unsigned (7 downto 0);
+    pixel_Ram1 :out std_logic_vector (63 downto 0);
+    pixel_Ram2 :out std_logic_vector (63 downto 0);
+    ram1 :in std_logic_vector (63 downto 0);
+    ram2 :in std_logic_vector (63 downto 0);
+    CS_enable   : out  std_logic;  -- Active Low
+     WE_enable   : out  std_logic;       --Active Low
+     RYxSO_ack   : in std_logic;
+     Addr1   : out std_logic_vector (13 downto 0);
+     Addr2   : out std_logic_vector (12 downto 0)
+     );
+end ram_control1;
+architecture Behavioral of ram_control1 is
+type state_type is (write_data,read_data,write_ram);
+signal current_state, next_state : state_type;
+signal count,count_next: unsigned( 18 downto 0);
+signal count_next1,count1: unsigned( 13 downto 0);
+signal count_next3,count3: unsigned( 12 downto 0);
+signal  count_next2,count2,count_next4,count4,count_next5,count5: unsigned( 3 downto 0);
+ signal register_matrix,register_matrix_reg,register_matrix1,register_matrix_reg1   : unsigned(63 downto 0) := (others => '0');
+begin
+
+process(clk,reset)              -- The register process
+begin
+  if reset ='1' then
+    current_state <= write_data;
+    count <= (others => '0');
+    count1 <= (others => '0');
+    count2 <= (others => '0');
+    count3 <= (others => '0');
+    count4 <= (others => '0');
+    count5 <= (others => '0');
+     CS_enable <= '1' ;
+    register_matrix <= (others => '0');
+    register_matrix1 <= (others => '0');
+elsif clk'event and clk = '1' then
+    current_state <= next_state;
+    count <= count_next;
+    count1 <= count_next1;
+    count2 <= count_next2;
+    count3 <= count_next3;
+     count4 <= count_next4;
+     count5 <= count_next5;
+    CS_enable <= '0' ;
+    register_matrix <= register_matrix_reg;
+    register_matrix1 <= register_matrix_reg1;
+end if;
+end process;
+process(current_state,count,count1,count2,count3,count4,count5,edge_pixelin,pixel_ack,ram1,ram2,RYxSO_ack,register_matrix)
+begin
+next_state <= current_state;
+register_matrix_reg <= register_matrix;
+register_matrix_reg1 <= register_matrix1;
+ count_next <= count;
+ count_next1 <= count1;
+ count_next2 <= count2;
+  count_next3 <= count3;
+  count_next4 <= count4;
+  count_next5 <= count5;
+ pixel_out <= (others => '0');
+pixel_Ram1 <= (others => '0');
+pixel_Ram2 <= (others => '0');
+Addr1 <= (others => '0');
+Addr2 <= (others => '0');
+pixel_ack_out  <= '0';
+pixel_ack_out1 <= '0';
+read_start <= '0';
+  WE_enable  <= '1' ;
+
+case current_state is
+  when write_data =>
+      if   pixel_ack = '1' or pixel_ack1 = '1'  then
+          if (count2 < "0111" and count < "11000011100000100")then
+           register_matrix_reg <= edge_pixelin & register_matrix(63 downto 8) ;
+          count_next2 <=  count2 + 1;
+          count_next <=  count + 1;
+          pixel_ack_out  <= '1';
+         next_state <= write_data;
+         elsif (count2 = "0111"and count < "11000011100000100")then
+          register_matrix_reg <= edge_pixelin & register_matrix(63 downto 8) ;
+          count_next2 <=  count2 + 1;
+          count_next <=  count + 1;
+          pixel_ack_out1  <= '1';
+          next_state <= write_ram;
+          else
+           register_matrix_reg <= register_matrix;
+          count_next <= (others => '0');
+          count_next2 <=  (others => '0');
+          next_state <= write_ram; 
+        end if;
+      end if;
+  when write_ram =>
+     if (count1 < "10010110000000" and count5 = "0000") then
+         WE_enable <= '0' ;
+          Addr1 <= std_logic_vector(count1);
+           pixel_Ram1 <=  std_logic_vector(register_matrix_reg);
+           count_next1 <=  count1 + 1;
+           count_next2 <=  (others => '0');
+           pixel_ack_out  <= '1';
+          next_state <=write_data;
+       elsif(count3 < "101101100000" and count5 = "0001" ) then
+          WE_enable <= '0' ;
+          Addr2 <= std_logic_vector(count3);
+           pixel_Ram2 <=  std_logic_vector(register_matrix_reg);
+           count_next3 <=  count3 + 1;
+           count_next2 <=  (others => '0');
+           pixel_ack_out  <= '1';
+           next_state <=write_data;
+           elsif(count1 = "10010110000000" and count5 = "0000") then 
+           WE_enable <= '0' ;
+          Addr2 <= std_logic_vector(count3);
+           pixel_Ram2 <=  std_logic_vector(register_matrix_reg);
+           count_next3 <=  count3 + 1;
+            count_next5 <=  count5 + 1;
+            count_next1 <=(others => '0');
+            count_next2 <=  (others => '0');
+            pixel_ack_out  <= '1';
+             next_state <= write_data;
+           else
+            count_next5 <=(others => '0'); 
+           count_next3 <= (others => '0');
+            pixel_Ram1 <= (others => '0');
+             pixel_Ram2 <= (others => '0');
+             
+            next_state <= read_data; 
+         end if;
+  
+        when read_data => 
+           if (count1 < "10010110000000" and count5 = "0000") then  
+             WE_enable <= '1' ;
+             Addr1 <= std_logic_vector(count1);
+           read_start <= '1' ;
+           if (count4 <"1000" and count4 = "0000" ) then
+             count_next4 <=  count4 + 1;
+          next_state <= read_data;
+           elsif( count4 <"1000" and count4 = "0001" ) then
+           pixel_out <= unsigned(ram1(7 downto 0));
+           count_next4 <=  count4 + 1;
+                 next_state <= read_data;
+               elsif( count4 <"1000" and count4 = "0010" ) then
+                 pixel_out <= unsigned(ram1(15 downto 8));
+                 
+                count_next4 <=  count4 + 1;
+                 next_state <= read_data;
+                elsif( count4 <"1000" and count4 = "0011" ) then
+                   pixel_out <= unsigned(ram1(23 downto 16));
+                  
+                count_next4 <=  count4 + 1;
+                  next_state <= read_data;
+                 elsif( count4 <"1000" and count4 = "0100" ) then
+                 pixel_out <= unsigned(ram1(31 downto 24));
+                    
+                 count_next4 <=  count4 + 1;
+                  next_state <= read_data;
+                  elsif( count4 <"1000" and count4 = "0101" ) then
+                  pixel_out <= unsigned(ram1(39 downto 32));
+                  
+                count_next4 <=  count4 + 1;
+                  next_state <= read_data;
+                 elsif( count4 <"1000" and count4 = "0110" ) then
+                 pixel_out <= unsigned(ram1(47 downto 40));
+                 
+                  count_next4 <=  count4 + 1;
+                  next_state <= read_data;
+                 elsif( count4 <"1000" and count4 = "0111" ) then
+                 pixel_out <= unsigned(ram1(55 downto 48));
+                 count_next4 <=  count4 + 1;
+                 next_state <= read_data; 
+               else
+                  pixel_out <= unsigned(ram1(63 downto 56));
+                  count_next4 <=  (others => '0');
+                  count_next1 <=  count1 + 1;    
+                  next_state <= read_data;
+                 end if;
+          elsif (count3 < "101101100000" and count5 = "0001") then
+             WE_enable <= '1' ;
+              Addr2 <= std_logic_vector(count3);
+              read_start <= '1' ;
+              if (  count4 <"1000" and count4 = "0000" ) then
+               count_next4 <=  count4 + 1;
+                next_state <= read_data;
+              elsif( count4 <"1000" and count4 = "0001" ) then
+               pixel_out <= unsigned(ram2(7 downto 0));
+              
+              count_next4 <=  count4 + 1;
+                 next_state <= read_data;
+               elsif( count4 <"1000" and count4 = "0010" ) then
+               pixel_out <= unsigned(ram2(15 downto 8));
+               
+                count_next4 <=  count4 + 1;
+                 next_state <= read_data;
+                elsif( count4 <"1000" and count4 = "0011" ) then
+                 pixel_out <= unsigned(ram2(23 downto 16)); 
+                  
+                count_next4 <=  count4 + 1;
+                  next_state <= read_data;
+                 elsif( count4 <"1000" and count4 = "0100" ) then
+                 pixel_out <= unsigned(ram2(31 downto 24));
+                   
+                 count_next4 <=  count4 + 1;
+                  next_state <= read_data;
+                  elsif( count4 <"1000" and count4 = "0101" ) then
+                   pixel_out <= unsigned(ram2(39 downto 32));
+                     
+                count_next4 <=  count4 + 1;
+                  next_state <= read_data;
+                 elsif( count4 <"1000" and count4 = "0110" ) then
+                 pixel_out <= unsigned(ram2(47 downto 40));
+                  
+                  count_next4 <=  count4 + 1;
+                  next_state <= read_data;
+                 elsif( count4 <"1000" and count4 = "0111" ) then
+                 pixel_out <= unsigned(ram2(55 downto 48));
+                 count_next4 <=  count4 + 1;
+                  next_state <= read_data;
+                  else
+                    pixel_out <= unsigned(ram2(63 downto 56));
+                    count_next4 <=  (others => '0');
+                  count_next3 <=  count3 + 1;
+                   next_state <= read_data;  
+                  end if;
+           elsif(count1 = "10010110000000" and count5 = "0000") then 
+             count_next5 <=  count5 + 1;
+            count_next1 <=(others => '0');
+             next_state <= read_data;
+             else
+            count_next1 <= (others => '0');
+           count_next3 <= (others => '0');
+            count_next5 <=  (others => '0');
+            next_state <=write_data;
+           end if;
+         end case;
+         end process;   
+     end Behavioral;
